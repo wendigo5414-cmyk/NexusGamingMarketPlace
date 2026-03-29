@@ -1,0 +1,103 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "A digital product in the marketplace.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "game": { "type": "string" },
+        "price": { "type": "number" },
+        "discount": { "type": "number" },
+        "image": { "type": "string" },
+        "rarity": { "type": "string" },
+        "category": { "type": "string", "enum": ["items", "currency", "accounts"] },
+        "stock": { "type": "number" },
+        "bonus": { "type": "string" },
+        "popular": { "type": "boolean" },
+        "desc": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["name", "price", "category", "createdAt"]
+    },
+    "PaymentMethod": {
+      "title": "Payment Method",
+      "description": "A cryptocurrency payment method.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "symbol": { "type": "string" },
+        "address": { "type": "string" },
+        "qrCodeUrl": { "type": "string" },
+        "color": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["name", "symbol", "address", "createdAt"]
+    },
+    "CheckoutConfig": {
+      "title": "Checkout Configuration",
+      "description": "Settings for the checkout form fields.",
+      "type": "object",
+      "properties": {
+        "requireRobloxUsername": { "type": "boolean" },
+        "requireDisplayName": { "type": "boolean" },
+        "requireRealName": { "type": "boolean" },
+        "requireMobile": { "type": "boolean" },
+        "requireEmail": { "type": "boolean" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["requireRobloxUsername", "requireDisplayName", "requireRealName", "requireMobile", "requireEmail"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "A customer order.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "items": { "type": "array", "items": { "type": "object" } },
+        "totalAmount": { "type": "number" },
+        "exactAmount": { "type": "number" },
+        "paymentMethodId": { "type": "string" },
+        "customerInfo": { "type": "object" },
+        "status": { "type": "string", "enum": ["pending", "paid", "completed", "cancelled"] },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["items", "totalAmount", "exactAmount", "paymentMethodId", "customerInfo", "status", "createdAt"]
+    },
+    "User": {
+      "title": "User",
+      "description": "A registered user.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["email", "role", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Stores all digital products."
+    },
+    "/paymentMethods/{methodId}": {
+      "schema": { "$ref": "#/entities/PaymentMethod" },
+      "description": "Stores available payment methods."
+    },
+    "/config/checkout": {
+      "schema": { "$ref": "#/entities/CheckoutConfig" },
+      "description": "Singleton configuration for checkout fields."
+    },
+    "/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/Order" },
+      "description": "Stores customer orders."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Stores user profiles and roles."
+    }
+  }
+}

@@ -1,0 +1,69 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email == "rracfo@gmail.com" ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && isOwner(userId) && hasRequiredFields(['email', 'role', 'createdAt']) && request.resource.data.role == 'user';
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /products/{productId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /paymentMethods/{methodId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /config/checkout {
+      allow read: if true;
+      allow create, update: if isAdmin();
+      allow delete: if false; // Singleton should not be deleted
+    }
+
+    match /orders/{orderId} {
+      // Anyone can create an order (even unauthenticated, if guest checkout is allowed)
+      // We will allow unauthenticated order creation for a seamless checkout experience
+      allow create: if hasRequiredFields(['items', 'totalAmount', 'exactAmount', 'paymentMethodId', 'customerInfo', 'status', 'createdAt']) && 
+                    request.resource.data.status == 'pending';
+      
+      // Only admin can read all orders. Users can't read orders unless we implement a way to track them (e.g., by session ID or auth).
+      // For now, only admin can read.
+      allow read: if isAdmin();
+      allow update, delete: if isAdmin();
+    }
+  }
+}

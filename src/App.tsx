@@ -5,6 +5,10 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Routes, Route } from 'react-router-dom';
+import { collection, onSnapshot, doc, addDoc } from 'firebase/firestore';
+import { db } from './firebase';
+import Admin from './Admin';
 import { 
   ShoppingCart, Menu, X, ChevronRight, Star, Shield, Zap, 
   Bitcoin, Wallet, CreditCard, CheckCircle2, Gamepad2, 
@@ -419,34 +423,83 @@ const CheckoutModal = ({
   onClose, 
   cart, 
   total,
-  onRemoveFromCart
+  onRemoveFromCart,
+  config,
+  paymentMethods
 }: { 
   isOpen: boolean, 
   onClose: () => void, 
   cart: any[], 
   total: number,
-  onRemoveFromCart: (index: number) => void
+  onRemoveFromCart: (index: number) => void,
+  config: any,
+  paymentMethods: any[]
 }) => {
-  const [selectedCrypto, setSelectedCrypto] = useState(CRYPTO_OPTIONS[0].id);
-  const [step, setStep] = useState(1); // 1: Cart, 2: Payment, 3: Success
+  const [selectedCrypto, setSelectedCrypto] = useState(paymentMethods.length > 0 ? paymentMethods[0].id : 'btc');
+  const [step, setStep] = useState(1); // 1: Cart, 2: Customer Info, 3: Payment, 4: Success
   const [isProcessing, setIsProcessing] = useState(false);
+  const [exactAmount, setExactAmount] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(900); // 15 minutes
+  const [customerInfo, setCustomerInfo] = useState({
+    robloxUsername: '',
+    displayName: '',
+    realName: '',
+    mobile: '',
+    email: ''
+  });
 
   if (!isOpen) return null;
 
-  const handlePayment = () => {
+  useEffect(() => {
+    if (step === 3) {
+      // Generate random .xx amount for tracking
+      const randomCents = Math.floor(Math.random() * 99) + 1;
+      setExactAmount(total + (randomCents / 100));
+      
+      const timer = setInterval(() => {
+        setTimeLeft((prev) => (prev > 0 ? prev - 1 : 0));
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [step, total]);
+
+  const handlePayment = async () => {
     setIsProcessing(true);
+    
+    try {
+      await addDoc(collection(db, 'orders'), {
+        items: cart,
+        totalAmount: total,
+        exactAmount: exactAmount,
+        paymentMethodId: selectedCrypto,
+        customerInfo,
+        status: 'pending',
+        createdAt: Date.now()
+      });
+    } catch (e) {
+      console.error("Failed to create order", e);
+    }
+
     setTimeout(() => {
       setIsProcessing(false);
-      setStep(3);
+      setStep(4);
     }, 2000);
   };
 
   const handleClose = () => {
-    if (step === 3) {
+    if (step === 4) {
       onRemoveFromCart(-1); // special flag to clear cart
     }
     onClose();
   };
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const selectedMethod = paymentMethods.find(m => m.id === selectedCrypto);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
@@ -461,12 +514,12 @@ const CheckoutModal = ({
         {/* Header */}
         <div className="flex justify-between items-center p-6 border-b border-white/10 bg-white/5">
           <h2 className="text-xl font-display font-bold flex items-center gap-2">
-            {step === 3 ? (
+            {step === 4 ? (
               <CheckCircle2 className="w-5 h-5 text-green-400" />
             ) : (
               <ShoppingCart className="w-5 h-5 text-neon-blue" />
             )}
-            {step === 1 ? 'Your Cart' : step === 2 ? 'Crypto Checkout' : 'Order Complete'}
+            {step === 1 ? 'Your Cart' : step === 2 ? 'Customer Details' : step === 3 ? 'Crypto Checkout' : 'Order Complete'}
           </h2>
           <button onClick={handleClose} className="text-gray-400 hover:text-white transition-colors">
             <X className="w-6 h-6" />
@@ -524,18 +577,67 @@ const CheckoutModal = ({
                   onClick={() => setStep(2)}
                   className="w-full py-4 rounded-lg bg-neon-blue/20 text-neon-blue font-bold border border-neon-blue neon-border-blue hover:bg-neon-blue hover:text-black transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Proceed to Payment
+                  Proceed to Checkout
                 </button>
               </div>
             </>
           ) : step === 2 ? (
+            // Customer Info Step
+            <div className="space-y-4">
+              {config.requireRobloxUsername && (
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Roblox Username *</label>
+                  <input type="text" required value={customerInfo.robloxUsername} onChange={e => setCustomerInfo({...customerInfo, robloxUsername: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-white focus:border-neon-blue focus:outline-none" />
+                </div>
+              )}
+              {config.requireDisplayName && (
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Display Name *</label>
+                  <input type="text" required value={customerInfo.displayName} onChange={e => setCustomerInfo({...customerInfo, displayName: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-white focus:border-neon-blue focus:outline-none" />
+                </div>
+              )}
+              {config.requireRealName && (
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Real Name *</label>
+                  <input type="text" required value={customerInfo.realName} onChange={e => setCustomerInfo({...customerInfo, realName: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-white focus:border-neon-blue focus:outline-none" />
+                </div>
+              )}
+              {config.requireMobile && (
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Mobile Number *</label>
+                  <input type="tel" required value={customerInfo.mobile} onChange={e => setCustomerInfo({...customerInfo, mobile: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-white focus:border-neon-blue focus:outline-none" />
+                </div>
+              )}
+              {config.requireEmail && (
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Email Address *</label>
+                  <input type="email" required value={customerInfo.email} onChange={e => setCustomerInfo({...customerInfo, email: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-white focus:border-neon-blue focus:outline-none" />
+                </div>
+              )}
+              
+              <div className="flex gap-4 mt-6">
+                <button onClick={() => setStep(1)} className="px-6 py-4 rounded-lg glass-panel text-white font-bold hover:bg-white/10 transition-all duration-300">
+                  Back
+                </button>
+                <button 
+                  onClick={() => setStep(3)}
+                  className="flex-1 py-4 rounded-lg bg-neon-blue/20 text-neon-blue font-bold border border-neon-blue neon-border-blue hover:bg-neon-blue hover:text-black transition-all duration-300"
+                >
+                  Continue to Payment
+                </button>
+              </div>
+            </div>
+          ) : step === 3 ? (
             // Payment Step
             <div className="space-y-6">
+              <div className="text-center mb-4">
+                <p className="text-gray-400 text-sm">Time remaining to pay</p>
+                <p className="text-2xl font-mono font-bold text-red-400">{formatTime(timeLeft)}</p>
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-400 mb-3">Select Cryptocurrency</label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {CRYPTO_OPTIONS.map((crypto) => {
-                    const Icon = crypto.icon;
+                  {paymentMethods.map((crypto) => {
                     const isSelected = selectedCrypto === crypto.id;
                     return (
                       <button
@@ -547,7 +649,6 @@ const CheckoutModal = ({
                             : 'bg-white/5 border-white/10 hover:border-white/30'
                         }`}
                       >
-                        <Icon className={`w-8 h-8 mb-2 ${crypto.color}`} />
                         <span className="font-medium text-sm">{crypto.name}</span>
                         <span className="text-xs text-gray-500">{crypto.symbol}</span>
                       </button>
@@ -556,22 +657,29 @@ const CheckoutModal = ({
                 </div>
               </div>
 
-              <div className="p-4 rounded-lg bg-black/50 border border-white/10 font-mono text-sm">
-                <div className="flex justify-between mb-2">
-                  <span className="text-gray-400">Amount to send:</span>
-                  <span className="text-neon-blue font-bold">
-                    {(total / 65000).toFixed(6)} {CRYPTO_OPTIONS.find(c => c.id === selectedCrypto)?.symbol}
-                  </span>
+              {selectedMethod && (
+                <div className="p-4 rounded-lg bg-black/50 border border-white/10 font-mono text-sm text-center">
+                  <p className="text-gray-400 mb-2">Please send exactly:</p>
+                  <p className="text-3xl text-neon-blue font-bold mb-4">
+                    ${exactAmount.toFixed(2)} <span className="text-sm text-gray-500">USD in {selectedMethod.symbol}</span>
+                  </p>
+                  
+                  {selectedMethod.qrCodeUrl && (
+                    <div className="mb-4 flex justify-center">
+                      <img src={selectedMethod.qrCodeUrl} alt="QR Code" className="w-48 h-48 rounded-lg border-2 border-neon-blue p-2 bg-white" />
+                    </div>
+                  )}
+                  
+                  <div className="text-left bg-white/5 p-3 rounded">
+                    <span className="text-gray-400 block mb-1">Send to Address:</span>
+                    <span className="text-xs text-neon-purple break-all">{selectedMethod.address}</span>
+                  </div>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-400">Address:</span>
-                  <span className="text-xs text-gray-300 truncate ml-4">bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh</span>
-                </div>
-              </div>
+              )}
 
               <div className="flex gap-4">
                 <button 
-                  onClick={() => setStep(1)}
+                  onClick={() => setStep(2)}
                   disabled={isProcessing}
                   className="px-6 py-4 rounded-lg glass-panel text-white font-bold hover:bg-white/10 transition-all duration-300 disabled:opacity-50"
                 >
@@ -667,10 +775,36 @@ const Toast = ({ message, onClose }: { message: string, onClose: () => void }) =
   );
 };
 
-export default function App() {
+function Storefront() {
   const [cart, setCart] = useState<any[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [checkoutConfig, setCheckoutConfig] = useState<any>({
+    requireRobloxUsername: true,
+    requireDisplayName: false,
+    requireRealName: false,
+    requireMobile: false,
+    requireEmail: true,
+  });
+  const [paymentMethods, setPaymentMethods] = useState<any[]>(CRYPTO_OPTIONS);
+
+  useEffect(() => {
+    const unsubConfig = onSnapshot(doc(db, 'config', 'checkout'), (d) => {
+      if (d.exists()) {
+        setCheckoutConfig(d.data());
+      }
+    });
+    const unsubPayments = onSnapshot(collection(db, 'paymentMethods'), (snapshot) => {
+      const methods = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (methods.length > 0) {
+        setPaymentMethods(methods);
+      }
+    });
+    return () => {
+      unsubConfig();
+      unsubPayments();
+    };
+  }, []);
 
   const addToCart = (item: any) => {
     setCart([...cart, item]);
@@ -724,6 +858,8 @@ export default function App() {
             cart={cart}
             total={total}
             onRemoveFromCart={removeFromCart}
+            config={checkoutConfig}
+            paymentMethods={paymentMethods}
           />
         )}
       </AnimatePresence>
@@ -736,6 +872,15 @@ export default function App() {
 
       <TrustTicker />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<Storefront />} />
+      <Route path="/admin" element={<Admin />} />
+    </Routes>
   );
 }
 
