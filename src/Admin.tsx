@@ -20,6 +20,31 @@ export default function Admin() {
   });
   const [token, setToken] = useState<string | null>(localStorage.getItem('adminToken'));
 
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [productForm, setProductForm] = useState({
+    name: '', price: 0, category: 'items', game: '', image: '', rarity: '', stock: 100
+  });
+
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({
+    name: '', symbol: '', address: '', qrCodeUrl: '', color: 'text-neon-blue'
+  });
+
+  const handleImageUpload = (e: any, field: string, isProduct: boolean) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (isProduct) {
+          setProductForm(prev => ({ ...prev, [field]: reader.result as string }));
+        } else {
+          setPaymentForm(prev => ({ ...prev, [field]: reader.result as string }));
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   useEffect(() => {
     if (token) {
       setIsAdmin(true);
@@ -90,12 +115,8 @@ export default function Admin() {
     }
   };
 
-  const addProduct = async () => {
-    const name = prompt('Product Name:');
-    if (!name) return;
-    const price = parseFloat(prompt('Price:') || '0');
-    const category = prompt('Category (items, currency, accounts):', 'items');
-    
+  const submitProduct = async (e: FormEvent) => {
+    e.preventDefault();
     try {
       const res = await fetch('/api/products', {
         method: 'POST',
@@ -103,17 +124,13 @@ export default function Admin() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({
-          name,
-          price,
-          category,
-          game: prompt('Game (e.g., MM2):') || '',
-          image: prompt('Image URL:') || 'https://picsum.photos/400/400?blur=2',
-          rarity: prompt('Rarity (e.g., Godly):') || '',
-          stock: parseInt(prompt('Stock:') || '100')
-        })
+        body: JSON.stringify(productForm)
       });
-      if (res.ok) fetchData();
+      if (res.ok) {
+        fetchData();
+        setShowProductModal(false);
+        setProductForm({ name: '', price: 0, category: 'items', game: '', image: '', rarity: '', stock: 100 });
+      }
     } catch (error) {
       console.error("Failed to add product", error);
     }
@@ -133,13 +150,8 @@ export default function Admin() {
     }
   };
 
-  const addPaymentMethod = async () => {
-    const name = prompt('Method Name (e.g., Bitcoin):');
-    if (!name) return;
-    const symbol = prompt('Symbol (e.g., BTC):') || '';
-    const address = prompt('Wallet Address:') || '';
-    const qrCodeUrl = prompt('QR Code Image URL (optional):') || '';
-    
+  const submitPaymentMethod = async (e: FormEvent) => {
+    e.preventDefault();
     try {
       const res = await fetch('/api/payment-methods', {
         method: 'POST',
@@ -147,15 +159,13 @@ export default function Admin() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({
-          name,
-          symbol,
-          address,
-          qrCodeUrl,
-          color: 'text-neon-blue'
-        })
+        body: JSON.stringify(paymentForm)
       });
-      if (res.ok) fetchData();
+      if (res.ok) {
+        fetchData();
+        setShowPaymentModal(false);
+        setPaymentForm({ name: '', symbol: '', address: '', qrCodeUrl: '', color: 'text-neon-blue' });
+      }
     } catch (error) {
       console.error("Failed to add payment method", error);
     }
@@ -257,7 +267,7 @@ export default function Admin() {
           <div>
             <div className="flex justify-between items-center mb-8">
               <h2 className="text-3xl font-bold">Manage Products</h2>
-              <button onClick={addProduct} className="flex items-center gap-2 px-4 py-2 bg-neon-blue/20 text-neon-blue rounded-lg hover:bg-neon-blue hover:text-black transition-colors">
+              <button onClick={() => setShowProductModal(true)} className="flex items-center gap-2 px-4 py-2 bg-neon-blue/20 text-neon-blue rounded-lg hover:bg-neon-blue hover:text-black transition-colors">
                 <Plus className="w-5 h-5" /> Add Product
               </button>
             </div>
@@ -282,7 +292,7 @@ export default function Admin() {
           <div>
             <div className="flex justify-between items-center mb-8">
               <h2 className="text-3xl font-bold">Payment Methods</h2>
-              <button onClick={addPaymentMethod} className="flex items-center gap-2 px-4 py-2 bg-neon-blue/20 text-neon-blue rounded-lg hover:bg-neon-blue hover:text-black transition-colors">
+              <button onClick={() => setShowPaymentModal(true)} className="flex items-center gap-2 px-4 py-2 bg-neon-blue/20 text-neon-blue rounded-lg hover:bg-neon-blue hover:text-black transition-colors">
                 <Plus className="w-5 h-5" /> Add Method
               </button>
             </div>
@@ -367,6 +377,90 @@ export default function Admin() {
           </div>
         )}
       </div>
+
+      {/* Product Modal */}
+      {showProductModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+          <div className="glass-panel p-6 rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <h2 className="text-2xl font-bold mb-4">Add Product</h2>
+            <form onSubmit={submitProduct} className="space-y-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Name</label>
+                <input required type="text" value={productForm.name} onChange={e => setProductForm({...productForm, name: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded p-2 text-white" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Price</label>
+                  <input required type="number" step="0.01" value={productForm.price} onChange={e => setProductForm({...productForm, price: parseFloat(e.target.value)})} className="w-full bg-white/5 border border-white/10 rounded p-2 text-white" />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Stock</label>
+                  <input required type="number" value={productForm.stock} onChange={e => setProductForm({...productForm, stock: parseInt(e.target.value)})} className="w-full bg-white/5 border border-white/10 rounded p-2 text-white" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Category</label>
+                <select value={productForm.category} onChange={e => setProductForm({...productForm, category: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded p-2 text-white [&>option]:bg-[#05050a]">
+                  <option value="items">Items</option>
+                  <option value="currency">Currency</option>
+                  <option value="accounts">Accounts</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Game (e.g., MM2)</label>
+                <input type="text" value={productForm.game} onChange={e => setProductForm({...productForm, game: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded p-2 text-white" />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Rarity</label>
+                <input type="text" value={productForm.rarity} onChange={e => setProductForm({...productForm, rarity: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded p-2 text-white" />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Image URL or Upload</label>
+                <input type="text" placeholder="https://..." value={productForm.image} onChange={e => setProductForm({...productForm, image: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded p-2 text-white mb-2" />
+                <input type="file" accept="image/*" onChange={e => handleImageUpload(e, 'image', true)} className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-neon-blue/20 file:text-neon-blue hover:file:bg-neon-blue/30" />
+                {productForm.image && <img src={productForm.image} alt="Preview" className="mt-2 h-20 rounded object-cover" />}
+              </div>
+              <div className="flex gap-4 mt-6">
+                <button type="button" onClick={() => setShowProductModal(false)} className="flex-1 py-2 bg-white/10 rounded hover:bg-white/20">Cancel</button>
+                <button type="submit" className="flex-1 py-2 bg-neon-blue text-black font-bold rounded hover:bg-neon-blue/80">Save</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Method Modal */}
+      {showPaymentModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+          <div className="glass-panel p-6 rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <h2 className="text-2xl font-bold mb-4">Add Payment Method</h2>
+            <form onSubmit={submitPaymentMethod} className="space-y-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Name (e.g., Bitcoin)</label>
+                <input required type="text" value={paymentForm.name} onChange={e => setPaymentForm({...paymentForm, name: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded p-2 text-white" />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Symbol (e.g., BTC)</label>
+                <input type="text" value={paymentForm.symbol} onChange={e => setPaymentForm({...paymentForm, symbol: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded p-2 text-white" />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Wallet Address</label>
+                <input required type="text" value={paymentForm.address} onChange={e => setPaymentForm({...paymentForm, address: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded p-2 text-white" />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">QR Code URL or Upload</label>
+                <input type="text" placeholder="https://..." value={paymentForm.qrCodeUrl} onChange={e => setPaymentForm({...paymentForm, qrCodeUrl: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded p-2 text-white mb-2" />
+                <input type="file" accept="image/*" onChange={e => handleImageUpload(e, 'qrCodeUrl', false)} className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-neon-blue/20 file:text-neon-blue hover:file:bg-neon-blue/30" />
+                {paymentForm.qrCodeUrl && <img src={paymentForm.qrCodeUrl} alt="QR Preview" className="mt-2 h-20 rounded object-cover" />}
+              </div>
+              <div className="flex gap-4 mt-6">
+                <button type="button" onClick={() => setShowPaymentModal(false)} className="flex-1 py-2 bg-white/10 rounded hover:bg-white/20">Cancel</button>
+                <button type="submit" className="flex-1 py-2 bg-neon-blue text-black font-bold rounded hover:bg-neon-blue/80">Save</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

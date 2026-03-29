@@ -5,8 +5,9 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, useNavigate } from 'react-router-dom';
 import Admin from './Admin';
+import Checkout from './Checkout';
 import { 
   ShoppingCart, Menu, X, ChevronRight, Star, Shield, Zap, 
   Bitcoin, Wallet, CreditCard, CheckCircle2, Gamepad2, 
@@ -732,22 +733,22 @@ const CheckoutModal = ({
   );
 };
 
-const TrustTicker = () => {
+const PurchaseNotification = ({ message }: { message: string }) => {
   return (
-    <div className="fixed bottom-0 w-full bg-black/80 backdrop-blur-md border-t border-white/10 py-2 z-40 overflow-hidden flex">
-      <motion.div 
-        animate={{ x: ["0%", "-50%"] }}
-        transition={{ repeat: Infinity, duration: 30, ease: "linear" }}
-        className="flex whitespace-nowrap gap-8 px-4 w-max"
-      >
-        {[...RECENT_TX, ...RECENT_TX, ...RECENT_TX, ...RECENT_TX].map((tx, i) => (
-          <div key={i} className="flex items-center gap-2 text-sm text-gray-400">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_#22c55e]" />
-            {tx}
-          </div>
-        ))}
-      </motion.div>
-    </div>
+    <motion.div
+      initial={{ opacity: 0, x: -50 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -50 }}
+      className="fixed bottom-4 left-4 z-50 flex items-center gap-3 px-4 py-3 rounded-lg glass-panel border-neon-purple/50 shadow-[0_0_20px_rgba(176,38,255,0.2)]"
+    >
+      <div className="w-8 h-8 rounded-full bg-neon-purple/20 flex items-center justify-center">
+        <ShoppingCart className="w-4 h-4 text-neon-purple" />
+      </div>
+      <div>
+        <p className="text-sm font-bold text-white">New Purchase</p>
+        <p className="text-xs text-gray-400">{message}</p>
+      </div>
+    </motion.div>
   );
 };
 
@@ -779,61 +780,73 @@ const Toast = ({ message, onClose }: { message: string, onClose: () => void }) =
 };
 
 function Storefront() {
-  const [cart, setCart] = useState<any[]>([]);
-  const [isCartOpen, setIsCartOpen] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [checkoutConfig, setCheckoutConfig] = useState<any>({
-    requireRobloxUsername: true,
-    requireDisplayName: false,
-    requireRealName: false,
-    requireMobile: false,
-    requireEmail: true,
+  const navigate = useNavigate();
+  const [cart, setCart] = useState<any[]>(() => {
+    const saved = localStorage.getItem('cart');
+    return saved ? JSON.parse(saved) : [];
   });
-  const [paymentMethods, setPaymentMethods] = useState<any[]>(CRYPTO_OPTIONS);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [products, setProducts] = useState<any[]>([]);
+  
+  const [names, setNames] = useState<string[]>([]);
+  const [purchaseNotif, setPurchaseNotif] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [configRes, paymentsRes, productsRes] = await Promise.all([
-          fetch('/api/config'),
-          fetch('/api/payment-methods'),
-          fetch('/api/products')
-        ]);
-        
-        if (configRes.ok) setCheckoutConfig(await configRes.json());
-        if (paymentsRes.ok) {
-          const methods = await paymentsRes.json();
-          if (methods.length > 0) setPaymentMethods(methods);
-        }
-        if (productsRes.ok) setProducts(await productsRes.json());
-      } catch (e) {
-        console.error("Failed to fetch data", e);
-      }
-    };
-    fetchData();
+    localStorage.setItem('cart', JSON.stringify(cart));
+  }, [cart]);
+
+  useEffect(() => {
+    fetch('/api/products')
+      .then(res => res.json())
+      .then(setProducts)
+      .catch(console.error);
+
+    fetch('/Names.txt')
+      .then(res => res.text())
+      .then(text => {
+        const nameList = text.split('\n').map(n => n.trim()).filter(n => n);
+        setNames(nameList);
+      })
+      .catch(console.error);
   }, []);
+
+  useEffect(() => {
+    if (names.length === 0) return;
+
+    let timeoutId: NodeJS.Timeout;
+
+    const showRandomNotification = () => {
+      const randomName = names[Math.floor(Math.random() * names.length)];
+      let productName = "nothing";
+      if (products.length > 0) {
+        const randomProduct = products[Math.floor(Math.random() * products.length)];
+        productName = randomProduct.name;
+      }
+
+      setPurchaseNotif(`${randomName} just bought ${productName}`);
+
+      setTimeout(() => {
+        setPurchaseNotif(null);
+      }, 3000);
+
+      const nextTime = Math.floor(Math.random() * 7000) + 3000;
+      timeoutId = setTimeout(showRandomNotification, nextTime);
+    };
+
+    const nextTime = Math.floor(Math.random() * 7000) + 3000;
+    timeoutId = setTimeout(showRandomNotification, nextTime);
+
+    return () => clearTimeout(timeoutId);
+  }, [names, products]);
 
   const addToCart = (item: any) => {
     setCart([...cart, item]);
     setToastMessage(`${item.name} added to your cart.`);
   };
 
-  const removeFromCart = (index: number) => {
-    if (index === -1) {
-      setCart([]);
-      return;
-    }
-    const newCart = [...cart];
-    newCart.splice(index, 1);
-    setCart(newCart);
-  };
-
-  const total = cart.reduce((sum, item) => sum + item.price, 0);
-
   return (
     <div className="min-h-screen bg-[#05050a] text-white pb-12">
-      <Navbar cartCount={cart.length} onOpenCart={() => setIsCartOpen(true)} />
+      <Navbar cartCount={cart.length} onOpenCart={() => navigate('/checkout')} />
       
       <main>
         <Hero />
@@ -859,26 +872,16 @@ function Storefront() {
       </footer>
 
       <AnimatePresence>
-        {isCartOpen && (
-          <CheckoutModal 
-            isOpen={isCartOpen} 
-            onClose={() => setIsCartOpen(false)} 
-            cart={cart}
-            total={total}
-            onRemoveFromCart={removeFromCart}
-            config={checkoutConfig}
-            paymentMethods={paymentMethods}
-          />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
         {toastMessage && (
           <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
         )}
       </AnimatePresence>
 
-      <TrustTicker />
+      <AnimatePresence>
+        {purchaseNotif && (
+          <PurchaseNotification message={purchaseNotif} />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -887,6 +890,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Storefront />} />
+      <Route path="/checkout" element={<Checkout />} />
       <Route path="/admin" element={<Admin />} />
     </Routes>
   );
