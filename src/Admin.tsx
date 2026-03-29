@@ -1,14 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 import { motion } from 'motion/react';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { auth, db } from './firebase';
-import { signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { Shield, Plus, Trash2, Edit2, LogOut, Settings, Package, CreditCard, ShoppingBag } from 'lucide-react';
 
 export default function Admin() {
   const [user, setUser] = useState<any>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTab] = useState('products');
+  const [password, setPassword] = useState('');
 
   const [products, setProducts] = useState<any[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
@@ -20,67 +18,76 @@ export default function Admin() {
     requireMobile: false,
     requireEmail: true,
   });
+  const [token, setToken] = useState<string | null>(localStorage.getItem('adminToken'));
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((u) => {
-      setUser(u);
-      if (u) {
-        // Check if admin (we assume rracfo@gmail.com is admin or we check a users collection)
-        if (u.email === 'rracfo@gmail.com') {
-          setIsAdmin(true);
-        } else {
-          setIsAdmin(false);
-        }
-      } else {
-        setIsAdmin(false);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
+    if (token) {
+      setIsAdmin(true);
+      fetchData();
+    }
+  }, [token]);
 
-  useEffect(() => {
-    if (!isAdmin) return;
-
-    const unsubProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
-      setProducts(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-
-    const unsubPayments = onSnapshot(collection(db, 'paymentMethods'), (snapshot) => {
-      setPaymentMethods(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-
-    const unsubOrders = onSnapshot(collection(db, 'orders'), (snapshot) => {
-      setOrders(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-
-    const unsubConfig = onSnapshot(doc(db, 'config', 'checkout'), (d) => {
-      if (d.exists()) {
-        setCheckoutConfig(d.data());
-      }
-    });
-
-    return () => {
-      unsubProducts();
-      unsubPayments();
-      unsubOrders();
-      unsubConfig();
-    };
-  }, [isAdmin]);
-
-  const handleLogin = async () => {
-    const provider = new GoogleAuthProvider();
+  const fetchData = async () => {
     try {
-      await signInWithPopup(auth, provider);
+      const headers = { 'Authorization': `Bearer ${token}` };
+      const [productsRes, paymentsRes, ordersRes, configRes] = await Promise.all([
+        fetch('/api/products'),
+        fetch('/api/payment-methods'),
+        fetch('/api/orders', { headers }),
+        fetch('/api/config')
+      ]);
+
+      if (productsRes.ok) setProducts(await productsRes.json());
+      if (paymentsRes.ok) setPaymentMethods(await paymentsRes.json());
+      if (ordersRes.ok) setOrders(await ordersRes.json());
+      if (configRes.ok) setCheckoutConfig(await configRes.json());
+    } catch (error) {
+      console.error("Failed to fetch admin data", error);
+    }
+  };
+
+  const handleLogin = async (e: FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        localStorage.setItem('adminToken', data.token);
+        setToken(data.token);
+        setIsAdmin(true);
+      } else {
+        alert('Invalid password');
+      }
     } catch (error) {
       console.error('Login failed', error);
     }
   };
 
-  const handleLogout = () => signOut(auth);
+  const handleLogout = () => {
+    localStorage.removeItem('adminToken');
+    setToken(null);
+    setIsAdmin(false);
+  };
 
   const saveConfig = async () => {
-    await setDoc(doc(db, 'config', 'checkout'), checkoutConfig);
-    alert('Checkout config saved!');
+    try {
+      await fetch('/api/config', {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(checkoutConfig)
+      });
+      alert('Checkout config saved!');
+    } catch (error) {
+      console.error("Failed to save config", error);
+    }
   };
 
   const addProduct = async () => {
@@ -89,21 +96,40 @@ export default function Admin() {
     const price = parseFloat(prompt('Price:') || '0');
     const category = prompt('Category (items, currency, accounts):', 'items');
     
-    await addDoc(collection(db, 'products'), {
-      name,
-      price,
-      category,
-      game: prompt('Game (e.g., MM2):') || '',
-      image: prompt('Image URL:') || 'https://picsum.photos/400/400?blur=2',
-      rarity: prompt('Rarity (e.g., Godly):') || '',
-      stock: parseInt(prompt('Stock:') || '100'),
-      createdAt: Date.now()
-    });
+    try {
+      const res = await fetch('/api/products', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name,
+          price,
+          category,
+          game: prompt('Game (e.g., MM2):') || '',
+          image: prompt('Image URL:') || 'https://picsum.photos/400/400?blur=2',
+          rarity: prompt('Rarity (e.g., Godly):') || '',
+          stock: parseInt(prompt('Stock:') || '100')
+        })
+      });
+      if (res.ok) fetchData();
+    } catch (error) {
+      console.error("Failed to add product", error);
+    }
   };
 
   const deleteProduct = async (id: string) => {
     if (confirm('Are you sure?')) {
-      await deleteDoc(doc(db, 'products', id));
+      try {
+        const res = await fetch(`/api/products/${id}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) fetchData();
+      } catch (error) {
+        console.error("Failed to delete product", error);
+      }
     }
   };
 
@@ -114,47 +140,81 @@ export default function Admin() {
     const address = prompt('Wallet Address:') || '';
     const qrCodeUrl = prompt('QR Code Image URL (optional):') || '';
     
-    await addDoc(collection(db, 'paymentMethods'), {
-      name,
-      symbol,
-      address,
-      qrCodeUrl,
-      color: 'text-neon-blue',
-      createdAt: Date.now()
-    });
+    try {
+      const res = await fetch('/api/payment-methods', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name,
+          symbol,
+          address,
+          qrCodeUrl,
+          color: 'text-neon-blue'
+        })
+      });
+      if (res.ok) fetchData();
+    } catch (error) {
+      console.error("Failed to add payment method", error);
+    }
   };
 
   const deletePaymentMethod = async (id: string) => {
     if (confirm('Are you sure?')) {
-      await deleteDoc(doc(db, 'paymentMethods', id));
+      try {
+        const res = await fetch(`/api/payment-methods/${id}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) fetchData();
+      } catch (error) {
+        console.error("Failed to delete payment method", error);
+      }
     }
   };
 
-  if (!user) {
+  const updateOrderStatus = async (id: string, status: string) => {
+    try {
+      const res = await fetch(`/api/orders/${id}/status`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ status })
+      });
+      if (res.ok) fetchData();
+    } catch (error) {
+      console.error("Failed to update order status", error);
+    }
+  };
+
+  if (!isAdmin) {
     return (
       <div className="min-h-screen bg-[#05050a] text-white flex items-center justify-center">
-        <div className="glass-panel p-8 rounded-2xl text-center">
+        <div className="glass-panel p-8 rounded-2xl text-center max-w-md w-full">
           <Shield className="w-16 h-16 text-neon-purple mx-auto mb-4" />
           <h1 className="text-2xl font-bold mb-6">Admin Login</h1>
-          <button onClick={handleLogin} className="px-6 py-3 bg-white text-black font-bold rounded-lg hover:bg-gray-200 transition-colors">
-            Sign in with Google
-          </button>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <input 
+              type="password" 
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Admin Password"
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-neon-blue"
+            />
+            <button type="submit" className="w-full px-6 py-3 bg-white text-black font-bold rounded-lg hover:bg-gray-200 transition-colors">
+              Login
+            </button>
+          </form>
         </div>
       </div>
     );
   }
 
-  if (!isAdmin) {
-    return (
-      <div className="min-h-screen bg-[#05050a] text-white flex flex-col items-center justify-center">
-        <h1 className="text-2xl font-bold mb-4 text-red-500">Access Denied</h1>
-        <p className="mb-6">You do not have admin privileges.</p>
-        <button onClick={handleLogout} className="px-6 py-3 bg-white/10 text-white rounded-lg hover:bg-white/20">
-          Logout
-        </button>
-      </div>
-    );
-  }
+
 
   return (
     <div className="min-h-screen bg-[#05050a] text-white flex">

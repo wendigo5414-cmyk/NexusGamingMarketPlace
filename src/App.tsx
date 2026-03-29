@@ -6,8 +6,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Routes, Route } from 'react-router-dom';
-import { collection, onSnapshot, doc, addDoc } from 'firebase/firestore';
-import { db } from './firebase';
 import Admin from './Admin';
 import { 
   ShoppingCart, Menu, X, ChevronRight, Star, Shield, Zap, 
@@ -253,7 +251,7 @@ const Hero = () => {
   );
 };
 
-const ItemsGrid = ({ onAddToCart }: { onAddToCart: (item: any) => void }) => {
+const ItemsGrid = ({ onAddToCart, items }: { onAddToCart: (item: any) => void, items: any[] }) => {
   return (
     <section id="items" className="py-20 relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -270,7 +268,7 @@ const ItemsGrid = ({ onAddToCart }: { onAddToCart: (item: any) => void }) => {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {ITEMS.map((item) => (
+          {items.map((item) => (
             <motion.div 
               key={item.id}
               whileHover={{ y: -5 }}
@@ -318,7 +316,7 @@ const ItemsGrid = ({ onAddToCart }: { onAddToCart: (item: any) => void }) => {
   );
 };
 
-const Services = ({ onAddToCart }: { onAddToCart: (item: any) => void }) => {
+const Services = ({ onAddToCart, items }: { onAddToCart: (item: any) => void, items: any[] }) => {
   return (
     <section id="currency" className="py-20 relative bg-white/[0.02] border-y border-white/5">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -328,7 +326,7 @@ const Services = ({ onAddToCart }: { onAddToCart: (item: any) => void }) => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {ROBUX_TIERS.map((tier) => (
+          {items.map((tier) => (
             <div 
               key={tier.id} 
               className={`relative glass-panel rounded-2xl p-6 flex flex-col transition-transform duration-300 hover:-translate-y-2 ${tier.popular ? 'border-neon-purple neon-border-purple shadow-[0_0_30px_rgba(176,38,255,0.2)]' : 'hover:border-white/20'}`}
@@ -372,7 +370,7 @@ const Services = ({ onAddToCart }: { onAddToCart: (item: any) => void }) => {
   );
 };
 
-const Accounts = ({ onAddToCart }: { onAddToCart: (item: any) => void }) => {
+const Accounts = ({ onAddToCart, items }: { onAddToCart: (item: any) => void, items: any[] }) => {
   return (
     <section id="accounts" className="py-20 relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -384,7 +382,7 @@ const Accounts = ({ onAddToCart }: { onAddToCart: (item: any) => void }) => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {ACCOUNTS.map((acc) => (
+          {items.map((acc) => (
             <motion.div 
               key={acc.id} 
               whileHover={{ y: -5 }}
@@ -467,14 +465,19 @@ const CheckoutModal = ({
     setIsProcessing(true);
     
     try {
-      await addDoc(collection(db, 'orders'), {
-        items: cart,
-        totalAmount: total,
-        exactAmount: exactAmount,
-        paymentMethodId: selectedCrypto,
-        customerInfo,
-        status: 'pending',
-        createdAt: Date.now()
+      await fetch('/api/orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          items: cart,
+          totalAmount: total,
+          exactAmount: exactAmount,
+          paymentMethodId: selectedCrypto,
+          customerInfo,
+          status: 'pending'
+        })
       });
     } catch (e) {
       console.error("Failed to create order", e);
@@ -787,23 +790,28 @@ function Storefront() {
     requireEmail: true,
   });
   const [paymentMethods, setPaymentMethods] = useState<any[]>(CRYPTO_OPTIONS);
+  const [products, setProducts] = useState<any[]>([]);
 
   useEffect(() => {
-    const unsubConfig = onSnapshot(doc(db, 'config', 'checkout'), (d) => {
-      if (d.exists()) {
-        setCheckoutConfig(d.data());
+    const fetchData = async () => {
+      try {
+        const [configRes, paymentsRes, productsRes] = await Promise.all([
+          fetch('/api/config'),
+          fetch('/api/payment-methods'),
+          fetch('/api/products')
+        ]);
+        
+        if (configRes.ok) setCheckoutConfig(await configRes.json());
+        if (paymentsRes.ok) {
+          const methods = await paymentsRes.json();
+          if (methods.length > 0) setPaymentMethods(methods);
+        }
+        if (productsRes.ok) setProducts(await productsRes.json());
+      } catch (e) {
+        console.error("Failed to fetch data", e);
       }
-    });
-    const unsubPayments = onSnapshot(collection(db, 'paymentMethods'), (snapshot) => {
-      const methods = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      if (methods.length > 0) {
-        setPaymentMethods(methods);
-      }
-    });
-    return () => {
-      unsubConfig();
-      unsubPayments();
     };
+    fetchData();
   }, []);
 
   const addToCart = (item: any) => {
@@ -829,9 +837,9 @@ function Storefront() {
       
       <main>
         <Hero />
-        <ItemsGrid onAddToCart={addToCart} />
-        <Services onAddToCart={addToCart} />
-        <Accounts onAddToCart={addToCart} />
+        <ItemsGrid onAddToCart={addToCart} items={products.filter(p => p.category === 'items')} />
+        <Services onAddToCart={addToCart} items={products.filter(p => p.category === 'currency')} />
+        <Accounts onAddToCart={addToCart} items={products.filter(p => p.category === 'accounts')} />
       </main>
 
       {/* Footer */}
