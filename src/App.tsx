@@ -557,7 +557,7 @@ const CheckoutModal = ({
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
-                        <span className="font-bold">${item.price.toFixed(2)}</span>
+                        <span className="font-bold">${(item.price || 0).toFixed(2)}</span>
                         <button 
                           onClick={() => onRemoveFromCart(idx)}
                           className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
@@ -573,7 +573,7 @@ const CheckoutModal = ({
               <div className="mt-6 pt-6 border-t border-white/10">
                 <div className="flex justify-between items-center mb-6">
                   <span className="text-gray-400">Total Amount</span>
-                  <span className="text-3xl font-display font-bold text-neon-blue">${total.toFixed(2)}</span>
+                  <span className="text-3xl font-display font-bold text-neon-blue">${(total || 0).toFixed(2)}</span>
                 </div>
                 
                 <button 
@@ -665,7 +665,7 @@ const CheckoutModal = ({
                 <div className="p-4 rounded-lg bg-black/50 border border-white/10 font-mono text-sm text-center">
                   <p className="text-gray-400 mb-2">Please send exactly:</p>
                   <p className="text-3xl text-neon-blue font-bold mb-4">
-                    ${exactAmount.toFixed(2)} <span className="text-sm text-gray-500">USD in {selectedMethod.symbol}</span>
+                    ${(exactAmount || 0).toFixed(2)} <span className="text-sm text-gray-500">USD in {selectedMethod.symbol}</span>
                   </p>
                   
                   {selectedMethod.qrCodeUrl && (
@@ -782,8 +782,13 @@ const Toast = ({ message, onClose }: { message: string, onClose: () => void }) =
 function Storefront() {
   const navigate = useNavigate();
   const [cart, setCart] = useState<any[]>(() => {
-    const saved = localStorage.getItem('cart');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('cart');
+      const parsed = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
   });
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [products, setProducts] = useState<any[]>([]);
@@ -797,8 +802,8 @@ function Storefront() {
 
   useEffect(() => {
     fetch('/api/products')
-      .then(res => res.json())
-      .then(setProducts)
+      .then(res => res.ok ? res.json() : [])
+      .then(data => setProducts(Array.isArray(data) ? data : []))
       .catch(console.error);
 
     fetch('/Names.txt')

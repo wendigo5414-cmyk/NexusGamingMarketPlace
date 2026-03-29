@@ -6,8 +6,13 @@ import { CheckCircle2, X, ChevronLeft } from 'lucide-react';
 export default function Checkout() {
   const navigate = useNavigate();
   const [cart, setCart] = useState<any[]>(() => {
-    const saved = localStorage.getItem('cart');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('cart');
+      const parsed = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
   });
   const [config, setConfig] = useState<any>({});
   const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
@@ -26,16 +31,24 @@ export default function Checkout() {
   const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
-    fetch('/api/config').then(res => res.json()).then(setConfig);
-    fetch('/api/payment-methods').then(res => res.json()).then(data => {
-      setPaymentMethods(data);
-      if (data.length > 0) setSelectedCrypto(data[0].id);
-    });
+    fetch('/api/config')
+      .then(res => res.ok ? res.json() : {})
+      .then(data => setConfig(data || {}))
+      .catch(() => setConfig({}));
+      
+    fetch('/api/payment-methods')
+      .then(res => res.ok ? res.json() : [])
+      .then(data => {
+        const methods = Array.isArray(data) ? data : [];
+        setPaymentMethods(methods);
+        if (methods.length > 0) setSelectedCrypto(methods[0]._id || methods[0].id);
+      })
+      .catch(() => setPaymentMethods([]));
   }, []);
 
   useEffect(() => {
     if (step === 3) {
-      const total = cart.reduce((sum, item) => sum + item.price, 0);
+      const total = cart.reduce((sum, item) => sum + (item?.price || 0), 0);
       const randomCents = Math.floor(Math.random() * 99) + 1;
       setExactAmount(total + (randomCents / 100));
       
@@ -54,7 +67,7 @@ export default function Checkout() {
     localStorage.setItem('cart', JSON.stringify(newCart));
   };
 
-  const total = cart.reduce((sum, item) => sum + item.price, 0);
+  const total = cart.reduce((sum, item) => sum + (item?.price || 0), 0);
 
   const handlePayment = async () => {
     setIsProcessing(true);
@@ -89,7 +102,7 @@ export default function Checkout() {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  const selectedMethod = paymentMethods.find(m => m.id === selectedCrypto);
+  const selectedMethod = paymentMethods.find(m => (m._id || m.id) === selectedCrypto);
 
   return (
     <div className="min-h-screen bg-[#05050a] text-white p-4 md:p-10">
@@ -107,20 +120,22 @@ export default function Checkout() {
               <p className="text-gray-400">Your cart is empty.</p>
             ) : (
               <div className="space-y-4">
-                {cart.map((item, idx) => (
+                {cart.map((item, idx) => {
+                  if (!item) return null;
+                  return (
                   <div key={idx} className="flex justify-between items-center p-4 bg-white/5 rounded-lg border border-white/10">
                     <div className="flex items-center gap-4">
                       {item.image && <img src={item.image} alt={item.name} className="w-12 h-12 rounded object-cover" />}
                       <div>
-                        <h4 className="font-medium">{item.name}</h4>
-                        <p className="text-sm text-gray-400">${item.price.toFixed(2)}</p>
+                        <h4 className="font-medium">{item.name || 'Unknown Item'}</h4>
+                        <p className="text-sm text-gray-400">${(item.price || 0).toFixed(2)}</p>
                       </div>
                     </div>
                     <button onClick={() => removeFromCart(idx)} className="text-red-400 hover:text-red-300 p-2 bg-red-400/10 rounded-lg">
                       <X className="w-5 h-5" />
                     </button>
                   </div>
-                ))}
+                )})}
                 <div className="text-right text-2xl font-bold mt-6 pt-6 border-t border-white/10">
                   Total: <span className="text-neon-blue">${total.toFixed(2)}</span>
                 </div>
@@ -187,16 +202,19 @@ export default function Checkout() {
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-8">
-              {paymentMethods.map(crypto => (
-                <button
-                  key={crypto.id}
-                  onClick={() => setSelectedCrypto(crypto.id)}
-                  className={`p-4 rounded-lg border transition-all ${selectedCrypto === crypto.id ? 'bg-neon-blue/20 border-neon-blue shadow-[0_0_15px_rgba(0,240,255,0.2)]' : 'bg-white/5 border-white/10 hover:border-white/30'}`}
-                >
-                  <div className="font-bold">{crypto.name}</div>
-                  <div className="text-sm text-gray-400">{crypto.symbol}</div>
-                </button>
-              ))}
+              {paymentMethods.map(crypto => {
+                const id = crypto._id || crypto.id;
+                return (
+                  <button
+                    key={id}
+                    onClick={() => setSelectedCrypto(id)}
+                    className={`p-4 rounded-lg border transition-all ${selectedCrypto === id ? 'bg-neon-blue/20 border-neon-blue shadow-[0_0_15px_rgba(0,240,255,0.2)]' : 'bg-white/5 border-white/10 hover:border-white/30'}`}
+                  >
+                    <div className="font-bold">{crypto.name}</div>
+                    <div className="text-sm text-gray-400">{crypto.symbol}</div>
+                  </button>
+                );
+              })}
             </div>
 
             {selectedMethod && (

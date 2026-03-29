@@ -62,10 +62,19 @@ export default function Admin() {
         fetch('/api/config')
       ]);
 
-      if (productsRes.ok) setProducts(await productsRes.json());
-      if (paymentsRes.ok) setPaymentMethods(await paymentsRes.json());
-      if (ordersRes.ok) setOrders(await ordersRes.json());
-      if (configRes.ok) setCheckoutConfig(await configRes.json());
+      if (productsRes.ok) {
+        const data = await productsRes.json();
+        setProducts(Array.isArray(data) ? data : []);
+      }
+      if (paymentsRes.ok) {
+        const data = await paymentsRes.json();
+        setPaymentMethods(Array.isArray(data) ? data : []);
+      }
+      if (ordersRes.ok) {
+        const data = await ordersRes.json();
+        setOrders(Array.isArray(data) ? data : []);
+      }
+      if (configRes.ok) setCheckoutConfig(await configRes.json() || {});
     } catch (error) {
       console.error("Failed to fetch admin data", error);
     }
@@ -272,18 +281,20 @@ export default function Admin() {
               </button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {products.map(p => (
-                <div key={p.id} className="glass-panel p-4 rounded-xl flex items-center gap-4">
+              {products.map(p => {
+                const id = p._id || p.id;
+                return (
+                <div key={id} className="glass-panel p-4 rounded-xl flex items-center gap-4">
                   <img src={p.image} alt={p.name} className="w-16 h-16 rounded object-cover" />
                   <div className="flex-1">
                     <h3 className="font-bold">{p.name}</h3>
                     <p className="text-sm text-gray-400">${p.price} • {p.category}</p>
                   </div>
-                  <button onClick={() => deleteProduct(p.id)} className="p-2 text-red-400 hover:bg-red-500/20 rounded-lg">
+                  <button onClick={() => deleteProduct(id)} className="p-2 text-red-400 hover:bg-red-500/20 rounded-lg">
                     <Trash2 className="w-5 h-5" />
                   </button>
                 </div>
-              ))}
+              )})}
             </div>
           </div>
         )}
@@ -297,18 +308,20 @@ export default function Admin() {
               </button>
             </div>
             <div className="space-y-4">
-              {paymentMethods.map(m => (
-                <div key={m.id} className="glass-panel p-6 rounded-xl flex items-center justify-between">
+              {paymentMethods.map(m => {
+                const id = m._id || m.id;
+                return (
+                <div key={id} className="glass-panel p-6 rounded-xl flex items-center justify-between">
                   <div>
                     <h3 className="font-bold text-xl">{m.name} ({m.symbol})</h3>
                     <p className="text-sm text-gray-400 font-mono mt-1">{m.address}</p>
                     {m.qrCodeUrl && <p className="text-xs text-neon-blue mt-2">Has QR Code</p>}
                   </div>
-                  <button onClick={() => deletePaymentMethod(m.id)} className="p-2 text-red-400 hover:bg-red-500/20 rounded-lg">
+                  <button onClick={() => deletePaymentMethod(id)} className="p-2 text-red-400 hover:bg-red-500/20 rounded-lg">
                     <Trash2 className="w-5 h-5" />
                   </button>
                 </div>
-              ))}
+              )})}
             </div>
           </div>
         )}
@@ -348,15 +361,17 @@ export default function Admin() {
               {orders.length === 0 ? (
                 <p className="text-gray-400">No orders yet.</p>
               ) : (
-                orders.map(o => (
-                  <div key={o.id} className="glass-panel p-6 rounded-xl">
+                orders.map(o => {
+                  const id = o._id || o.id;
+                  return (
+                  <div key={id} className="glass-panel p-6 rounded-xl">
                     <div className="flex justify-between items-start mb-4">
                       <div>
-                        <span className="text-xs text-gray-500 font-mono">{o.id}</span>
-                        <h3 className="font-bold text-lg mt-1">Total: ${o.totalAmount.toFixed(2)} (Exact: {o.exactAmount})</h3>
+                        <span className="text-xs text-gray-500 font-mono">{id}</span>
+                        <h3 className="font-bold text-lg mt-1">Total: ${o.totalAmount?.toFixed(2)} (Exact: {o.exactAmount})</h3>
                       </div>
                       <span className={`px-3 py-1 rounded-full text-xs font-bold ${o.status === 'pending' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-green-500/20 text-green-400'}`}>
-                        {o.status.toUpperCase()}
+                        {o.status?.toUpperCase()}
                       </span>
                     </div>
                     <div className="text-sm text-gray-400 mb-4">
@@ -364,14 +379,14 @@ export default function Admin() {
                       <p><strong>Customer:</strong> {JSON.stringify(o.customerInfo)}</p>
                     </div>
                     <div className="space-y-2">
-                      {o.items.map((item: any, i: number) => (
+                      {o.items?.map((item: any, i: number) => (
                         <div key={i} className="flex items-center gap-2 bg-white/5 p-2 rounded">
                           <span className="text-neon-blue">{item.name}</span> - ${item.price}
                         </div>
                       ))}
                     </div>
                   </div>
-                ))
+                )})
               )}
             </div>
           </div>
